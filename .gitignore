@@ -1,0 +1,16 @@
+# Build outputs
+bin/
+obj/
+
+# IDE
+.vs/
+.vscode/
+*.userprefs
+*.sln
+
+# Lock files
+packages.lock.json
+
+# OS
+.DS_Store
+Thumbs.db
