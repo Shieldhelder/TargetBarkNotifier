@@ -6,7 +6,7 @@ public sealed partial class MainWindow
 {
     private static void DrawMatchHelp()
     {
-        ImGui.Text("版本: 1.1.5.2");
+        ImGui.Text("版本: 1.1.5.3");
         ImGui.Separator();
         ImGui.Text("TBN会按照如下步骤进行识别与Push消息");
         ImGui.Text("1. 标靶构造");
