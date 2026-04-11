@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <Authors>TargetBarkNotifier Developer</Authors>
-    <Version>1.1.5.3</Version>
+    <Version>1.1.5.4</Version>
     <Description>根据聊天消息匹配规则并发送推送通知（如 Bark / NotifyMe）</Description>
     <AssemblyName>TargetBarkNotifier</AssemblyName>
     <RootNamespace>TargetBarkNotifier</RootNamespace>

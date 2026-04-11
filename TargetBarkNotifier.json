@@ -2,8 +2,9 @@
   "Author": "TargetBarkNotifier Developer",
   "Name": "Target Bark Notifier",
   "InternalName": "TargetBarkNotifier",
-  "AssemblyVersion": "1.1.5.3",
-  "Description": "Target Bark Notifier 是一个轻量、开源的插件：\n- 监听游戏内聊天消息\n- 按规则匹配关键词\n- 触发后发送手机推送（支持 Bark / NotifyMe）\n- 可选 TTS 播报（系统语音）",
+  "AssemblyVersion": "1.1.5.4",
+  "Version": "1.1.5.4",
+  "Description": "Target Bark Notifier 是一个轻量、开源的插件：\n- 监听游戏内聊天消息\n- 按规则匹配关键词\n- 触发后发送手机推送（支持 Bark / NotifyMe）\n- 可选 TTS 播报（系统语音）\n- 支持在线监控客户端",
   "ApplicableVersion": "any",
   "RepoUrl": "",
   "Tags": [

@@ -52,6 +52,7 @@ public sealed class Plugin : IDalamudPlugin
     private bool hasKnownCharacterWorld;
     private readonly WindowSystem windowSystem = new("TargetBarkNotifier");
     private readonly MainWindow mainWindow;
+    private readonly MonitorClient monitorClient;
 
     public Plugin(
         IDalamudPluginInterface pluginInterface,
@@ -74,6 +75,13 @@ public sealed class Plugin : IDalamudPlugin
 
         ttsService = new TtsService(Log);
         pushService = new PushService(Log, ChatGui, Configuration, AddNotificationRecord, ApplyCharacterPlaceholders);
+        monitorClient = new MonitorClient(Configuration);
+        monitorClient.OnConnectionLost += async () =>
+        {
+            Configuration.EnableMonitor = false;
+            await StopMonitorClient();
+            Configuration.Save();
+        };
 
         mainWindow = new MainWindow(this);
         windowSystem.AddWindow(mainWindow);
@@ -89,6 +97,21 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenConfigUi += OpenUi;
 
         Log.Information("TargetBarkNotifier loaded.");
+        _ = monitorClient.StartAsync();
+    }
+
+    public bool IsMonitorConnected => monitorClient.IsConnected;
+    public bool MonitorConnectionFailed => monitorClient.ConnectionFailed;
+    public MonitorClient MonitorClient => monitorClient;
+
+    public async Task StartMonitorClient()
+    {
+        await monitorClient.StartAsync();
+    }
+
+    public async Task StopMonitorClient()
+    {
+        await monitorClient.StopAsync();
     }
 
     private void OnFrameworkUpdate(IFramework framework)
@@ -969,6 +992,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenMainUi -= OpenUi;
         PluginInterface.UiBuilder.OpenConfigUi -= OpenUi;
         ttsService.Dispose();
+        monitorClient.Dispose();
         windowSystem.RemoveAllWindows();
         mainWindow.Dispose();
     }

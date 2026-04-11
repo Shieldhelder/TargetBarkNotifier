@@ -27,6 +27,10 @@ public class Configuration : IPluginConfiguration
     public int OfflineAlertLimit { get; set; } = 3;
     public string OfflinePushTitle { get; set; } = "掉线监控";
     public string OfflinePushContent { get; set; } = "断开连接";
+    public bool EnableMonitor { get; set; } = false;
+    public string MonitorHost { get; set; } = "127.0.0.1";
+    public int MonitorPort { get; set; } = 9527;
+    public string MonitorToken { get; set; } = string.Empty;
     public List<MatchRule> Rules { get; set; } = [];
 
     [NonSerialized]

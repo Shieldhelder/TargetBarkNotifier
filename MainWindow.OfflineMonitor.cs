@@ -66,7 +66,6 @@ public sealed partial class MainWindow
             plugin.Configuration.OfflinePushTitle = title;
             SaveConfig();
         }
-        ImGui.TextDisabled("支持占位符: {name}, {server}");
 
         var content = plugin.Configuration.OfflinePushContent;
         ImGui.Text("推送内容");
@@ -129,67 +128,42 @@ public sealed partial class MainWindow
             ImGui.EndChild();
         }
 
-        DrawOfflineScanWindow();
-    }
+        ImGui.Separator();
+        ImGui.Text("在线监控服务");
 
-    private void DrawOfflineScanWindow()
-    {
-        if (!showOfflineScanWindow)
-            return;
-
-        ImGui.SetNextWindowSize(new Vector2(900, 640), ImGuiCond.FirstUseEver);
-        if (!ImGui.Begin("掉线监控扫描结果", ref showOfflineScanWindow, ImGuiWindowFlags.NoCollapse))
+        DrawCheckbox("启用监控客户端", plugin.Configuration.EnableMonitor, value =>
         {
-            ImGui.End();
-            return;
-        }
-
-        var statusInfo = plugin.GetOfflineNodeSnapshotInfo();
-        if (!string.IsNullOrWhiteSpace(statusInfo.Info))
-        {
-            ImGui.TextDisabled(statusInfo.Info);
-            ImGui.Separator();
-        }
-
-        ImGui.Text("扫描选项");
-        if (ImGui.Button("扫描 Addon"))
-        {
-            plugin.RequestAddonScan();
-        }
-
+            plugin.Configuration.EnableMonitor = value;
+            _ = plugin.StartMonitorClient();
+        });
         ImGui.SameLine();
-        if (ImGui.Button("扫描 Node"))
+        ImGui.TextDisabled(plugin.IsMonitorConnected ? "已连接" : "未连接");
+        ImGui.TextDisabled("连接到本地 TBNMonitor 服务，检测在线状态，离线时发送推送通知。");
+
+        var monitorHost = plugin.Configuration.MonitorHost;
+        ImGui.Text("监控主机");
+        ImGui.SetNextItemWidth(200f);
+        if (DrawInputTextWithHint("##monitorHost", "127.0.0.1", ref monitorHost, 64, value => plugin.Configuration.MonitorHost = value))
         {
-            plugin.RequestOfflineNodeScan();
+            SaveConfig();
         }
 
-        ImGui.Separator();
-        ImGui.Text("可见 Addon 列表");
-        var addonList = plugin.GetVisibleAddonSnapshot();
-        var addonHeight = Math.Max(160f, ImGui.GetContentRegionAvail().Y * 0.35f);
-        if (ImGui.BeginChild("##offline_addon_list", new Vector2(0f, addonHeight), true))
+        var monitorPort = plugin.Configuration.MonitorPort;
+        ImGui.Text("监控端口");
+        ImGui.SetNextItemWidth(100f);
+        if (ImGui.InputInt("##monitorPort", ref monitorPort))
         {
-            foreach (var name in addonList)
-            {
-                ImGui.TextUnformatted(name);
-            }
-            ImGui.EndChild();
+            plugin.Configuration.MonitorPort = monitorPort;
+            SaveConfig();
         }
 
-        ImGui.Separator();
-        ImGui.Text("Node 文本快照");
-        var nodes = plugin.GetOfflineNodeSnapshot();
-        var nodeHeight = Math.Max(220f, ImGui.GetContentRegionAvail().Y - 8f);
-        if (ImGui.BeginChild("##offline_node_list", new Vector2(0f, nodeHeight), true))
+        var monitorToken = plugin.Configuration.MonitorToken;
+        ImGui.Text("客户端标识");
+        ImGui.SetNextItemWidth(200f);
+        if (DrawInputTextWithHint("##monitorToken", "例如: 1号机", ref monitorToken, 64, value => plugin.Configuration.MonitorToken = value))
         {
-            foreach (var node in nodes)
-            {
-                ImGui.TextUnformatted($"{node.NodeId}: {node.Text}");
-            }
-            ImGui.EndChild();
+            SaveConfig();
         }
-
-        ImGui.End();
     }
 
     private void AddOfflineDefaultKeywords()
