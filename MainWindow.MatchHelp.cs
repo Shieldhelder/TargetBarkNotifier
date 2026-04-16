@@ -42,8 +42,7 @@ public sealed partial class MainWindow
 
         ImGui.Spacing();
         ImGui.Text("5. 推送服务");
-        ImGui.BulletText("支持 Bark (iOS)、NotifyMe (Android) 和 Server酱3 (微信/多渠道)");
-        ImGui.BulletText("Server酱3 支持标准 SendKey (SCTxxx) 和企业微信应用 (sctp 开头)");
+        ImGui.BulletText("支持 Bark (iOS)、NotifyMe (Android) 和 Server酱3 (多渠道推送)");
         ImGui.BulletText("三种推送方式可同时开启，互不影响");
 
         ImGui.Spacing();

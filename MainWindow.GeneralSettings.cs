@@ -43,7 +43,7 @@ public sealed partial class MainWindow
         var serverChan3Key = plugin.Configuration.ServerChan3Key;
         ImGui.Text("Server酱3 SendKey");
         ImGui.SetNextItemWidth(560f);
-        DrawInputTextWithHint("##serverChan3Key", "Server酱3 SendKey (以SCT或sctp开头)", ref serverChan3Key, 256, value => plugin.Configuration.ServerChan3Key = value);
+        DrawInputTextWithHint("##serverChan3Key", "Server酱3 SendKey (以sctp开头)", ref serverChan3Key, 256, value => plugin.Configuration.ServerChan3Key = value);
 
         ImGui.Separator();
         ImGui.Text("推送前缀设置");
