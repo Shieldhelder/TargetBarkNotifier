@@ -47,7 +47,8 @@ public sealed class Plugin : IDalamudPlugin
     private readonly List<string> visibleAddons = [];
     private DateTime lastAddonScanUtc = DateTime.MinValue;
     private string lastKnownCharacterName = string.Empty;
-    private string lastKnownServerName = string.Empty;
+    private string lastKnownHomeWorldName = string.Empty;
+    private string lastKnownCurrentWorldName = string.Empty;
     private string lastKnownCharacterSource = string.Empty;
     private bool hasKnownCharacterWorld;
     private readonly WindowSystem windowSystem = new("TargetBarkNotifier");
@@ -161,14 +162,15 @@ public sealed class Plugin : IDalamudPlugin
             if (latest.HasValue)
             {
                 lastKnownCharacterName = latest.Value.Name;
-                lastKnownServerName = latest.Value.Server;
+                lastKnownHomeWorldName = latest.Value.HomeWorld;
+                lastKnownCurrentWorldName = latest.Value.CurrentWorld;
                 lastKnownCharacterSource = latest.Value.Source;
                 hasKnownCharacterWorld = true;
-                return $"{latest.Value.Name}@{latest.Value.Server} [{latest.Value.Source}]";
+                return $"{latest.Value.Name}@{latest.Value.HomeWorld} [{latest.Value.Source}]";
             }
 
             if (hasKnownCharacterWorld)
-                return $"{lastKnownCharacterName}@{lastKnownServerName} [{lastKnownCharacterSource}]";
+                return $"{lastKnownCharacterName}@{lastKnownHomeWorldName} [{lastKnownCharacterSource}]";
 
             return "未获取到当前角色名及服务器";
         }
@@ -181,12 +183,13 @@ public sealed class Plugin : IDalamudPlugin
             return;
 
         lastKnownCharacterName = latest.Value.Name;
-        lastKnownServerName = latest.Value.Server;
+        lastKnownHomeWorldName = latest.Value.HomeWorld;
+        lastKnownCurrentWorldName = latest.Value.CurrentWorld;
         lastKnownCharacterSource = latest.Value.Source;
         hasKnownCharacterWorld = true;
     }
 
-    private (string Name, string Server, string Source)? TryBuildCurrentCharacterWorld()
+    private (string Name, string HomeWorld, string CurrentWorld, string Source)? TryBuildCurrentCharacterWorld()
     {
         foreach (var candidate in EnumeratePlayerCandidates())
         {
@@ -195,11 +198,15 @@ public sealed class Plugin : IDalamudPlugin
             if (string.IsNullOrWhiteSpace(name))
                 continue;
 
-            var world = TryReadWorldName(player);
-            if (string.IsNullOrWhiteSpace(world))
+            var homeWorld = TryReadHomeWorldName(player);
+            if (string.IsNullOrWhiteSpace(homeWorld))
                 continue;
 
-            return (name, world, candidate.Source);
+            var currentWorld = TryReadCurrentWorldName(player);
+            if (string.IsNullOrWhiteSpace(currentWorld))
+                currentWorld = homeWorld;
+
+            return (name, homeWorld, currentWorld, candidate.Source);
         }
 
         return null;
@@ -239,10 +246,12 @@ public sealed class Plugin : IDalamudPlugin
             return result;
 
         var name = hasKnownCharacterWorld ? lastKnownCharacterName : string.Empty;
-        var server = hasKnownCharacterWorld ? lastKnownServerName : string.Empty;
+        var server = hasKnownCharacterWorld ? lastKnownHomeWorldName : string.Empty;
+        var currentServer = hasKnownCharacterWorld ? lastKnownCurrentWorldName : string.Empty;
 
         result = result.Replace("{name}", name, StringComparison.OrdinalIgnoreCase);
         result = result.Replace("{server}", server, StringComparison.OrdinalIgnoreCase);
+        result = result.Replace("{currentserver}", currentServer, StringComparison.OrdinalIgnoreCase);
         return result;
     }
 
@@ -281,13 +290,14 @@ public sealed class Plugin : IDalamudPlugin
         }
     }
 
-    private static string? TryReadWorldName(object player)
+    private static string? TryReadHomeWorldName(object player)
     {
-        var current = TryReadWorldNameFromProperty(player, "CurrentWorld");
-        if (!string.IsNullOrWhiteSpace(current))
-            return current;
-
         return TryReadWorldNameFromProperty(player, "HomeWorld");
+    }
+
+    private static string? TryReadCurrentWorldName(object player)
+    {
+        return TryReadWorldNameFromProperty(player, "CurrentWorld");
     }
 
     private static string? TryReadWorldNameFromProperty(object source, string propertyName)
@@ -845,7 +855,13 @@ public sealed class Plugin : IDalamudPlugin
                 continue;
             if (!IsTerritoryMatched(rule.TerritoryId))
                 continue;
-            if (!IsRuleMatched(rule.MatchText, source))
+
+            var resolvedMatchText = ApplyCharacterPlaceholders(rule.MatchText);
+            if (!IsRuleMatched(resolvedMatchText, source))
+                continue;
+
+            var resolvedExcludeText = ApplyCharacterPlaceholders(rule.ExcludeText);
+            if (TryGetMatchedExcludeToken(resolvedExcludeText, out _, source))
                 continue;
 
             previews.Add(new RuleDebugPreview

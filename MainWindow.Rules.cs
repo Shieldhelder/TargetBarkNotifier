@@ -15,7 +15,7 @@ public sealed partial class MainWindow
         ImGui.TextDisabled("匹配标靶：[channel]Sender:Message. 支持 | (OR) 与 + (AND)，例如 123+456|队长点名");
         ImGui.TextDisabled("排除消息支持 | 分隔，命中任一排除词将不触发");
         ImGui.TextDisabled("匹配关键词支持占位符：{name}、{server}");
-        ImGui.TextDisabled("推送内容可自定义，支持占位符：{channel}、{sender}、{message}、{name}、{server}");
+        ImGui.TextDisabled("推送内容可自定义，支持占位符：{channel}、{sender}、{message}、{name}、{server}、{currentserver}");
 
         if (ImGui.Button("新增规则"))
         {
@@ -178,7 +178,7 @@ public sealed partial class MainWindow
                             rule.MessageTitle = messageTitle;
                             SaveConfig();
                         }
-                        ImGui.TextDisabled("支持占位符: {channel}, {sender}, {message}, {name}, {server}");
+                        ImGui.TextDisabled("支持占位符: {channel}, {sender}, {message}, {name}, {server}, {currentserver}");
 
                         var messageContent = rule.MessageContent;
                         ImGui.Text("消息内容");
@@ -188,7 +188,7 @@ public sealed partial class MainWindow
                             rule.MessageContent = messageContent;
                             SaveConfig();
                         }
-                        ImGui.TextDisabled("支持占位符: {channel}, {sender}, {message}, {name}, {server}");
+                        ImGui.TextDisabled("支持占位符: {channel}, {sender}, {message}, {name}, {server}, {currentserver}");
 
                         ImGui.Separator();
                         if (ImGui.Button("删除此规则"))
@@ -235,12 +235,12 @@ public sealed partial class MainWindow
             ImGui.Text("消息标题");
             ImGui.SetNextItemWidth(420f);
             ImGui.InputText("##newRuleTitle", ref newRuleTitle, 256);
-            ImGui.TextDisabled("支持占位符: {channel}, {sender}, {message}, {name}, {server}");
+            ImGui.TextDisabled("支持占位符: {channel}, {sender}, {message}, {name}, {server}, {currentserver}");
 
             ImGui.Text("消息内容");
             ImGui.SetNextItemWidth(420f);
             ImGui.InputText("##newRuleContent", ref newRuleContent, 512);
-            ImGui.TextDisabled("支持占位符: {channel}, {sender}, {message}, {name}, {server}");
+            ImGui.TextDisabled("支持占位符: {channel}, {sender}, {message}, {name}, {server}, {currentserver}");
 
             if (ImGui.Button("确认新增"))
             {

@@ -23,8 +23,10 @@ public sealed class MonitorClient : IDisposable
     private CancellationTokenSource? cts;
     private string clientId = string.Empty;
     private bool isConnected;
+    private bool isConnecting;
 
     public bool IsConnected => isConnected;
+    public bool IsConnecting => isConnecting;
     public bool ConnectionFailed => cts == null && !isConnected;
     public event Action<string>? OnLog;
     public event Action? OnConnectionLost;
@@ -62,7 +64,7 @@ public sealed class MonitorClient : IDisposable
         }
 
         cts = new CancellationTokenSource();
-        
+        isConnecting = true;
         Log("启动连接");
 
         try
@@ -72,6 +74,16 @@ public sealed class MonitorClient : IDisposable
         catch (OperationCanceledException)
         {
             Log("已取消");
+        }
+        finally
+        {
+            isConnecting = false;
+        }
+
+        if (!isConnected)
+        {
+            Cleanup();
+            OnConnectionLost?.Invoke();
         }
     }
 
@@ -83,7 +95,7 @@ public sealed class MonitorClient : IDisposable
 
         Log("连接 " + config.MonitorHost + ":" + config.MonitorPort);
 
-        var authPayload = $"{clientId}|{config.BarkToken ?? ""}|{config.NotifyMeUuid ?? ""}";
+        var authPayload = $"{clientId}|{config.BarkToken ?? ""}|{config.NotifyMeUuid ?? ""}|{config.ServerChan3Key ?? ""}";
 
         for (int attempt = 0; attempt < MaxReconnectAttempts; attempt++)
         {
@@ -95,7 +107,7 @@ public sealed class MonitorClient : IDisposable
                 linkCts.CancelAfter(ConnectTimeoutMs);
 
                 tcpClient = new TcpClient();
-                await tcpClient.ConnectAsync(config.MonitorHost, config.MonitorPort).ConfigureAwait(false);
+                await tcpClient.ConnectAsync(config.MonitorHost, config.MonitorPort, linkCts.Token).ConfigureAwait(false);
                 
                 token.ThrowIfCancellationRequested();
 
@@ -124,6 +136,8 @@ public sealed class MonitorClient : IDisposable
             }
             catch (Exception ex)
             {
+                try { tcpClient?.Close(); } catch { }
+                tcpClient = null;
                 Log("失败 " + (attempt + 1) + "/3: " + ex.Message);
             }
 
@@ -139,26 +153,23 @@ public sealed class MonitorClient : IDisposable
 
     private void StartHeartbeat()
     {
-        Log("=== StartHeartbeat 被调用 ===");
-        Log("interval=" + HeartbeatIntervalMs);
-        
         heartbeatTimer = new Timer(async _ => 
         { 
             try { await SendHeartbeatAsync(); } 
             catch (Exception ex) { Log("心跳异常: " + ex.Message); } 
         }, null, HeartbeatIntervalMs, HeartbeatIntervalMs);
         
-        Log("Timer 创建完成");
+        Log("心跳已启动");
     }
 
     private async Task SendHeartbeatAsync()
     {
-        Log("发送心跳... isConnected=" + isConnected + ", stream=" + (stream != null) + ", cts=" + (cts != null));
         if (!isConnected || stream == null || cts == null)
         {
-            Log("心跳提前返回: " + !isConnected + "/" + (stream == null) + "/" + (cts == null));
             return;
         }
+
+        Log("发送心跳");
 
         try
         {

@@ -60,7 +60,7 @@ public sealed partial class MainWindow
             ImGui.SameLine();
             ImGui.Text($"{item.TimeLocal:HH:mm:ss} | 匹配: {item.MatchText}");
             ImGui.TextWrapped($"推送方式: {item.PushProvider}");
-            ImGui.TextWrapped($"Token/UUID: {item.PushIdentity}");
+            ImGui.TextWrapped($"标识符: {item.PushIdentity}");
             ImGui.TextWrapped($"标题: {item.Title}");
             ImGui.TextWrapped($"内容: {item.Content}");
             if (!string.IsNullOrWhiteSpace(item.Detail))

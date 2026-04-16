@@ -2,6 +2,8 @@ using Dalamud.Plugin.Services;
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
+using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace TargetBarkNotifier;
@@ -19,6 +21,7 @@ public sealed class PushService
     private readonly Func<string, string> placeholderResolver;
     private bool barkMissingTokenNotified;
     private bool notifyMeMissingUuidNotified;
+    private bool serverChan3MissingKeyNotified;
 
     public PushService(IPluginLog log, IChatGui chatGui, Configuration configuration, Action<NotificationRecord> recordWriter, Func<string, string> placeholderResolver)
     {
@@ -83,23 +86,38 @@ public sealed class PushService
         for (var attempt = 0; attempt <= MaxRetries; attempt++)
         {
             var contentWithRetry = attempt == 0 ? content : $"{content}（重连{attempt}次）";
-            var url = BuildUrl(target, title, contentWithRetry);
+            var titleWithRetry = attempt == 0 ? title : $"{title}（重连{attempt}次）";
+            var (url, isPost, postData) = BuildUrl(target, titleWithRetry, contentWithRetry);
+            var sentContent = isPost ? $"{titleWithRetry} | {contentWithRetry}" : contentWithRetry;
 
             try
             {
-                using var response = await Http.GetAsync(url).ConfigureAwait(false);
-                if (response.IsSuccessStatusCode)
-                    return SendResult.Ok(contentWithRetry, url);
-
-                var statusCode = (int)response.StatusCode;
-                var detail = $"HTTP {statusCode} {response.ReasonPhrase}";
-                if (statusCode >= 500 && attempt < MaxRetries)
+                HttpResponseMessage response;
+                if (isPost && !string.IsNullOrEmpty(postData))
                 {
-                    await Task.Delay(RetryDelay).ConfigureAwait(false);
-                    continue;
+                    using var requestContent = new StringContent(postData, Encoding.UTF8, "application/x-www-form-urlencoded");
+                    response = await Http.PostAsync(url, requestContent).ConfigureAwait(false);
+                }
+                else
+                {
+                    response = await Http.GetAsync(url).ConfigureAwait(false);
                 }
 
-                return new SendResult(false, detail, null, contentWithRetry, url);
+                using (response)
+                {
+                    if (response.IsSuccessStatusCode)
+                        return SendResult.Ok(sentContent, url);
+
+                    var statusCode = (int)response.StatusCode;
+                    var detail = $"HTTP {statusCode} {response.ReasonPhrase}";
+                    if (statusCode >= 500 && attempt < MaxRetries)
+                    {
+                        await Task.Delay(RetryDelay).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    return new SendResult(false, detail, null, sentContent, url);
+                }
             }
             catch (TaskCanceledException ex)
             {
@@ -109,7 +127,7 @@ public sealed class PushService
                     continue;
                 }
 
-                return new SendResult(false, $"请求超时（30秒内未完成，已重试{MaxRetries}次）", ex, contentWithRetry, url);
+                return new SendResult(false, $"请求超时（30秒内未完成，已重试{MaxRetries}次）", ex, sentContent, url);
             }
             catch (HttpRequestException ex)
             {
@@ -119,24 +137,25 @@ public sealed class PushService
                     continue;
                 }
 
-                return new SendResult(false, ex.Message, ex, contentWithRetry, url);
+                return new SendResult(false, ex.Message, ex, sentContent, url);
             }
             catch (Exception ex)
             {
-                return new SendResult(false, ex.Message, ex, contentWithRetry, url);
+                return new SendResult(false, ex.Message, ex, sentContent, url);
             }
         }
 
         return new SendResult(false, "未知错误", null, content, string.Empty);
     }
 
-    private static string BuildUrl(PushTarget target, string title, string content)
+    private static (string Url, bool IsPost, string? PostData) BuildUrl(PushTarget target, string title, string content)
     {
         return target.Provider switch
         {
-            "Bark" => BuildBarkUrl(target.Identity, title, content),
-            "NotifyMe" => BuildNotifyMeUrl(target.Identity, title, content),
-            _ => string.Empty
+            "Bark" => (BuildBarkUrl(target.Identity, title, content), false, null),
+            "NotifyMe" => (BuildNotifyMeUrl(target.Identity, title, content), false, null),
+            "ServerChan3" => (BuildServerChan3Url(target.Identity), true, $"text={Uri.EscapeDataString(title)}&desp={Uri.EscapeDataString(content)}"),
+            _ => (string.Empty, false, null)
         };
     }
 
@@ -190,6 +209,29 @@ public sealed class PushService
             notifyMeMissingUuidNotified = false;
         }
 
+        if (configuration.EnableServerChan3Push)
+        {
+            var key = configuration.ServerChan3Key?.Trim() ?? string.Empty;
+            if (key.Length > 0)
+            {
+                serverChan3MissingKeyNotified = false;
+                list.Add(new PushTarget
+                {
+                    Provider = "ServerChan3",
+                    Identity = key
+                });
+            }
+            else if (!serverChan3MissingKeyNotified)
+            {
+                serverChan3MissingKeyNotified = true;
+                chatGui.Print("[TBN] Server酱3 SendKey为空，未发送消息。");
+            }
+        }
+        else
+        {
+            serverChan3MissingKeyNotified = false;
+        }
+
         return list;
     }
 
@@ -225,6 +267,23 @@ public sealed class PushService
         var encodedTitle = Uri.EscapeDataString(title);
         var encodedBody = Uri.EscapeDataString(body);
         return $"https://notifyme-server.wzn556.top/?uuid={encodedUuid}&title={encodedTitle}&body={encodedBody}";
+    }
+
+    private static string BuildServerChan3Url(string key)
+    {
+        // Server酱3 使用 POST 请求，URL 仅包含 key，内容放在请求体中
+        // 标准 key: https://sctapi.ftqq.com/{key}.send
+        // sctp key: https://{num}.push.ft07.com/send/{key}.send
+        if (key.StartsWith("sctp"))
+        {
+            var match = Regex.Match(key, @"^sctp(\d+)t");
+            if (match.Success)
+            {
+                var num = match.Groups[1].Value;
+                return $"https://{num}.push.ft07.com/send/{key}.send";
+            }
+        }
+        return $"https://sctapi.ftqq.com/{key}.send";
     }
 
     private sealed class PushTarget

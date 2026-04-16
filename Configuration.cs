@@ -16,8 +16,10 @@ public class Configuration : IPluginConfiguration
     public int RepeatCooldownSeconds { get; set; } = 10;
     public bool EnableBarkPush { get; set; } = true;
     public bool EnableNotifyMePush { get; set; } = false;
+    public bool EnableServerChan3Push { get; set; } = false;
     public string BarkToken { get; set; } = string.Empty;
     public string NotifyMeUuid { get; set; } = string.Empty;
+    public string ServerChan3Key { get; set; } = string.Empty;
     public string PushPrefix { get; set; } = string.Empty;
     public int PushPrefixLocation { get; set; } = 0;
     public bool EnableOfflineMonitor { get; set; } = false;

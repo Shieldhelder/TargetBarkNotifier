@@ -4,36 +4,30 @@
 
 - 监听游戏内聊天消息
 - 按规则匹配关键词
-- 触发后发送手机推送（支持 Bark / NotifyMe）
+- 触发后发送手机推送（支持 Bark / NotifyMe / Server酱3）
 - 可选 TTS 播报（系统语音）
 
 请注意，TBN是纯Vibe Coding的产物，请您在使用本插件前，做好所有可能的心理准备。
 ------------
 ## 依赖
 
-TBN需要在手机上安装Bark (ios) 或NotifyMe (安卓)，来实现消息Push。
+TBN需要在手机上安装Bark (iOS)、NotifyMe (安卓)，或通过微信接收Server酱3推送，来实现消息Push。
 作者更推荐使用Bark，太好用了APN服务。
-- 获取Bark:  [https://bark.day.app/](https://bark.day.app/) 
+- 获取Bark:  [https://bark.day.app/](https://bark.day.app/)
 - 获取NotifyMe:  [https://notifyme.521933.xyz/](https://notifyme.521933.xyz/)
-
-## 命令
-
-- `/tbn`：打开主窗口（配置规则、查看记录）
-- `/tbn on`：启用插件（开始监听消息并按规则触发）
-- `/tbn off`：禁用插件（停止监听与推送）
-- `/tbn test`：发送测试推送（并按设置触发 TTS）
-- `/tbn status`：查看当前开关状态与规则数量
+- 获取Server酱3:  [https://sct.ftqq.com/](https://sct.ftqq.com/)
 
 ## 功能概览
 
 - 规则格式：`匹配的消息` + `消息标题` + `消息内容`
 - 匹配标靶：`[channel]Sender:Message`
 - 匹配条件支持 `|` 分隔，任意关键词命中即触发
-- 推送内容可自定义，支持占位符：`{channel}` 频道、`{sender}` 发送者、`{message}` 消息主体
+- 推送内容可自定义，支持占位符：`{channel}` 频道、`{sender}` 发送者、`{message}` 消息主体、`{name}` 角色名、`{server}` 归属服务器、`{currentserver}` 当前服务器
 - 推送方式支持：
-  - `Bark`
-  - `NotifyMe`
-- 两种推送方式可自由切换，同时开启
+  - `Bark` (iOS APN推送)
+  - `NotifyMe` (Android多渠道推送)
+  - `Server酱3` (微信/企业微信/多渠道推送)
+- 三种推送方式可自由组合，同时开启
 - 通知记录支持查看成功/失败详情
 
 ## 推送配置
@@ -66,6 +60,21 @@ https://notifyme-server.wzn556.top/?uuid={uuid}&title={title}&body={content}
   具体请参考NotifyMe的相关文档。
 [https://notifyme.521933.xyz/push_type/oppo_push.html](https://notifyme.521933.xyz/push_type/oppo_push.html)
 
+### Server酱3
+
+- 填写 `Server酱3 SendKey`
+- SendKey 以 `SCT` 开头为标准版，以 `sctp` 开头为企业微信应用版
+- 推送接口格式：
+
+```text
+标准版: https://sctapi.ftqq.com/{sendkey}.send
+企业版: https://{num}.push.ft07.com/send/{sendkey}.send
+```
+
+- 支持推送到微信、企业微信、钉钉、飞书等多种渠道
+- 具体配置请参考 Server酱3 官方文档
+[https://sct.ftqq.com/](https://sct.ftqq.com/)
+
 ## 规则管理
 
 - 支持新增、删除、右键编辑规则
@@ -79,17 +88,31 @@ https://notifyme-server.wzn556.top/?uuid={uuid}&title={title}&body={content}
 - 时间
 - 匹配规则
 - 推送方式
-- Token/UUID
+- 标识符(Token/UUID/SendKey)
 - 标题
 - 内容
 - 成功/失败详情
 
-通知本身不会被TBN以任何形式储存，但由于TBN依赖于Bark/NotifyMe的推送服务，烦请阅读他们的隐私协议。
+### 推送重试机制
+
+- 推送失败时自动重试，最多重试 5 次，每次间隔 30 秒
+- 仅当服务端错误(HTTP 5xx)或请求超时时触发重试
+- 客户端错误(HTTP 4xx)或网络错误不会重试，立即返回失败
+- 重试时消息内容会标记重试次数，如：`内容（重连3次）`
+
+通知本身不会被TBN以任何形式储存，但由于TBN依赖于Bark/NotifyMe/Server酱3的推送服务，烦请阅读他们的隐私协议。
 
 ## TTS 说明
 
 - `启用TTS播报` 后，命中规则会播报原始消息
 - 使用系统语音通道，独立于游戏内音量设置
+
+## 掉线监控与客户端心跳监控
+
+- `启用掉线监控` 后，TBN会监控游戏内Addon的状态。如果发现掉线对话框，则触发推送。
+- `启用在线监控` 后，TBN会与局域网内的TBN Monitor握手，每隔一定时长向TBN Monitor发送存活心跳。如果客户端因为各种原因卡死失联，均会由TBN Monitor发送Push请求。
+- 获取TBN Monitor：请访问Github release. TBN Monitor的使用暂不会提供任何技术支持。
+[https://github.com/Shieldhelder/TBNMonitor](https://github.com/Shieldhelder/TBNMonitor)
 
 ## 构建与加载
 

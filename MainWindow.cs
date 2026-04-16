@@ -92,13 +92,13 @@ public sealed partial class MainWindow : Window, IDisposable
             {
                 if (ImGui.BeginTabBar("##offline_tabs"))
                 {
-                    if (ImGui.BeginTabItem("掉线监控"))
+                    if (ImGui.BeginTabItem("游戏掉线检测"))
                     {
                         DrawOfflineMonitorGame();
                         ImGui.EndTabItem();
                     }
 
-                    if (ImGui.BeginTabItem("在线监控"))
+                    if (ImGui.BeginTabItem("在线监控服务"))
                     {
                         DrawOfflineMonitorOnline();
                         ImGui.EndTabItem();
@@ -181,6 +181,7 @@ public sealed partial class MainWindow : Window, IDisposable
     private void DrawOfflineMonitorGame()
     {
         ImGui.Text("游戏掉线检测");
+        ImGui.TextDisabled("通过检测游戏内指定Addon的特定文本，识别游戏离线状态，进行Push操作");
         DrawCheckbox("启用掉线监控", plugin.Configuration.EnableOfflineMonitor,
             value => plugin.Configuration.EnableOfflineMonitor = value);
         ImGui.SameLine();
@@ -196,7 +197,7 @@ public sealed partial class MainWindow : Window, IDisposable
                 addonName = plugin.Configuration.OfflineAddonName;
         }
         ImGui.SameLine();
-        ImGui.TextDisabled("掉线对话框为Dialogue");
+        ImGui.TextDisabled("掉线对话框Addon的名称为Dialogue, 非特殊情况请勿修改");
         ImGui.SameLine();
         if (ImGui.Button("Debug"))
         {
@@ -247,6 +248,7 @@ public sealed partial class MainWindow : Window, IDisposable
             plugin.Configuration.OfflinePushContent = content;
             SaveConfig();
         }
+        ImGui.TextDisabled("支持占位符: {name}(角色名), {server}(归属服务器), {currentserver}(当前服务器)");
 
         var status = plugin.GetOfflineNodeSnapshotStatus();
         if (status.Count > 0)
@@ -303,32 +305,23 @@ public sealed partial class MainWindow : Window, IDisposable
     private void DrawOfflineMonitorOnline()
     {
         ImGui.Text("在线监控服务");
+        ImGui.TextDisabled("通过局域网 TBNMonitor 服务监控在线状态，离线时发送推送通知");
 
-        var enableMonitor = plugin.Configuration.EnableMonitor;
-        
-        var newValue = enableMonitor;
-        DrawCheckbox("启用监控客户端", enableMonitor, value => newValue = value);
-        
-        if (newValue != plugin.Configuration.EnableMonitor)
+        DrawCheckbox("启用监控客户端", plugin.Configuration.EnableMonitor, value =>
         {
-            plugin.Configuration.EnableMonitor = newValue;
-            SaveConfig();
-            if (newValue)
-            {
+            plugin.Configuration.EnableMonitor = value;
+            if (value)
                 _ = plugin.StartMonitorClient();
-            }
             else
-            {
                 _ = plugin.StopMonitorClient();
-            }
-        }
-
-        var connectionFailed = !plugin.IsMonitorConnected && enableMonitor && !plugin.Configuration.EnableMonitor;
-        
+        });
         ImGui.SameLine();
-        var statusText = plugin.IsMonitorConnected ? "已连接" : (connectionFailed ? "连接失败" : "未连接");
-        ImGui.TextDisabled(statusText);
-        ImGui.TextDisabled("连接到本地 TBNMonitor 服务，检测在线状态，离线时发送推送通知。");
+        if (plugin.IsMonitorConnected)
+            ImGui.TextColored(new Vector4(0.2f, 1f, 0.2f, 1f), "已连接");
+        else if (plugin.MonitorClient.IsConnecting)
+            ImGui.TextColored(new Vector4(1f, 1f, 0.2f, 1f), "连接中...");
+        else
+            ImGui.TextDisabled("未连接");
 
         var monitorHost = plugin.Configuration.MonitorHost;
         ImGui.Text("监控主机");
@@ -354,30 +347,23 @@ public sealed partial class MainWindow : Window, IDisposable
         {
             SaveConfig();
         }
+    }
 
-        ImGui.Separator();
-        ImGui.Text("日志");
-        ImGui.SameLine();
-        if (ImGui.Button("复制"))
+    private void AddOfflineDefaultKeywords()
+    {
+        var defaults = new[]
         {
-            lock (monitorLogLock)
-            {
-                var text = string.Join("\n", monitorLogs);
-                ImGui.SetClipboardText(text);
-            }
-        }
-        var logHeight = Math.Max(100f, ImGui.GetContentRegionAvail().Y - 8f);
-        if (ImGui.BeginChild("##monitor_logs", new Vector2(0f, logHeight), true))
+            "失去了与服务器的连接。",
+            "已断开连接。",
+            "与服务器的连接已中断。"
+        };
+
+        foreach (var text in defaults)
         {
-            lock (monitorLogLock)
-            {
-                foreach (var logMsg in monitorLogs)
-                {
-                    ImGui.TextUnformatted(logMsg);
-                }
-            }
-            ImGui.SetScrollHereY();
-            ImGui.EndChild();
+            if (!plugin.Configuration.OfflineMatchTexts.Exists(item => string.Equals(item, text, StringComparison.OrdinalIgnoreCase)))
+                plugin.Configuration.OfflineMatchTexts.Add(text);
         }
+
+        SaveConfig();
     }
 }
