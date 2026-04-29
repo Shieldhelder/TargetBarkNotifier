@@ -1,3 +1,4 @@
+using Dalamud.Game.Chat;
 using Dalamud.Game.Command;
 using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
@@ -681,12 +682,12 @@ public sealed class Plugin : IDalamudPlugin
         }
     }
 
-    private void OnChatMessage(XivChatType type, int timestamp, ref SeString sender, ref SeString message, ref bool isHandled)
+    private void OnChatMessage(IHandleableChatMessage chatMessage)
     {
         if (!Configuration.Enabled)
             return;
 
-        var text = message.TextValue;
+        var text = chatMessage.Message.TextValue;
         if (string.IsNullOrWhiteSpace(text))
             return;
 
@@ -696,8 +697,8 @@ public sealed class Plugin : IDalamudPlugin
                 continue;
             if (string.IsNullOrWhiteSpace(rule.MatchText))
                 continue;
-            var senderName = sender.TextValue?.Trim() ?? string.Empty;
-            var channelName = type.ToString();
+            var senderName = chatMessage.Sender.TextValue?.Trim() ?? string.Empty;
+            var channelName = chatMessage.LogKind.ToString();
             var matchSource = $"[{channelName}]{senderName}:{text}";
             var resolvedMatchText = ApplyCharacterPlaceholders(rule.MatchText);
             if (!IsRuleMatched(resolvedMatchText, matchSource))
@@ -900,7 +901,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         var id = ClientState?.TerritoryType ?? 0;
         if (id != 0)
-            return id;
+            return (ushort)id;
 
         var gameMain = GameMain.Instance();
         if (gameMain != null)
