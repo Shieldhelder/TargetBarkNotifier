@@ -30,6 +30,7 @@ public sealed partial class MainWindow : Window, IDisposable
     private bool showRecordFailed = true;
     private bool showRecordIgnored = true;
     private bool showOfflineScanWindow;
+    private bool showIdleDetectDebugWindow;
     private bool rulesFileDialogPending;
     private bool allowEditOfflineAddon;
     private readonly List<string> monitorLogs = new();
@@ -109,12 +110,63 @@ public sealed partial class MainWindow : Window, IDisposable
                 ImGui.EndTabItem();
             }
 
+            if (ImGui.BeginTabItem("静止检测"))
+            {
+                ImGui.Text("静止检测");
+                ImGui.TextDisabled("检测角色坐标变化，静止超过设定时间后发送推送通知");
+
+                DrawCheckbox("启用静止检测", plugin.Configuration.EnableIdleDetect,
+                    value => {
+                        plugin.Configuration.EnableIdleDetect = value;
+                        if (value)
+                        {
+                            plugin.ResetIdleState();
+                            plugin.ResetEuclideanState();
+                        }
+                    });
+                ImGui.SameLine();
+                ImGui.TextDisabled(plugin.Configuration.EnableIdleDetect ? "[已启用]" : "[已禁用]");
+
+                if (plugin.Configuration.EnableIdleDetect)
+                {
+                    ImGui.SameLine();
+                    if (ImGui.Button("打开调试窗口"))
+                    {
+                        showIdleDetectDebugWindow = true;
+                    }
+                }
+
+                if (plugin.Configuration.EnableIdleDetect)
+                {
+                    if (ImGui.BeginTabBar("##idle_tabs"))
+                    {
+                        if (ImGui.BeginTabItem("分量差检测"))
+                        {
+                            DrawComponentDiffDetect();
+                            ImGui.EndTabItem();
+                        }
+                        if (ImGui.BeginTabItem("几何差检测"))
+                        {
+                            DrawEuclideanDiffDetect();
+                            ImGui.EndTabItem();
+                        }
+                        ImGui.EndTabBar();
+                    }
+                }
+                ImGui.EndTabItem();
+            }
+
             ImGui.EndTabBar();
         }
 
         if (showOfflineScanWindow)
         {
             DrawOfflineScanWindow();
+        }
+
+        if (showIdleDetectDebugWindow)
+        {
+            DrawIdleDetectDebugWindow();
         }
     }
 

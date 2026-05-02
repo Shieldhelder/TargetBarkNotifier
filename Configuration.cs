@@ -29,6 +29,17 @@ public class Configuration : IPluginConfiguration
     public int OfflineAlertLimit { get; set; } = 3;
     public string OfflinePushTitle { get; set; } = "掉线监控";
     public string OfflinePushContent { get; set; } = "断开连接";
+    public bool EnableIdleDetect { get; set; } = false;
+    public bool EnableComponentDiffDetect { get; set; } = true;
+    public int ComponentDiffTimeoutSeconds { get; set; } = 180;
+    public float ComponentDiffThreshold { get; set; } = 0.5f;
+    public string ComponentDiffPushTitle { get; set; } = "分量静止检测";
+    public string ComponentDiffPushContent { get; set; } = "角色已静止 {stuck} 秒！";
+    public bool EnableEuclideanDiffDetect { get; set; } = false;
+    public int EuclideanDiffTimeoutSeconds { get; set; } = 180;
+    public float EuclideanDiffThreshold { get; set; } = 0.5f;
+    public string EuclideanDiffPushTitle { get; set; } = "几何静止检测";
+    public string EuclideanDiffPushContent { get; set; } = "角色已静止 {stuck} 秒！";
     public bool EnableMonitor { get; set; } = false;
     public string MonitorHost { get; set; } = "127.0.0.1";
     public int MonitorPort { get; set; } = 9527;

@@ -7,10 +7,15 @@ using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
+using FFXIVClientStructs.FFXIV.Client.Game.Character;
+using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using FFXIVClientStructs.FFXIV.Client.UI;
+using Lumina.Excel.Sheets;
 using System;
 using System.Collections.Generic;
+using System.Numerics;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace TargetBarkNotifier;
@@ -26,7 +31,8 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] public IGameGui GameGui { get; private set; } = null!;
     [PluginService] public IFramework Framework { get; private set; } = null!;
     [PluginService] public IClientState ClientState { get; private set; } = null!;
-    [PluginService] public IObjectTable ObjectTable { get; private set; } = null!;
+
+    public IDataManager DataManager { get; }
 
     public string Name => "Target Bark Notifier";
     public Configuration Configuration { get; }
@@ -44,13 +50,47 @@ public sealed class Plugin : IDalamudPlugin
     private DateTime lastOfflineScanUtc = DateTime.MinValue;
     private int lastOfflineNodeCount = 0;
     private string lastOfflineScanInfo = "";
+    private Vector3 idleLastPosition;
+    private DateTime? idleLastMoveTime;
+    private int idleStuckSeconds;
+    private DateTime idleLastTriggerUtc = DateTime.MinValue;
+    private float idleCurrentPosX, idleCurrentPosY, idleCurrentPosZ;
+    private float idleLastPosX, idleLastPosY, idleLastPosZ;
+    private float idleDeltaX, idleDeltaY, idleDeltaZ;
+    private Vector3 euclideanLastPosition;
+    private DateTime euclideanDiffMoveStart = DateTime.MinValue;
+    private int euclideanDiffStuckSeconds;
+    private DateTime euclideanDiffLastTriggerUtc = DateTime.MinValue;
+    private float euclideanDistance;
+    private string idlePlayerSource = string.Empty;
+    private bool idlePlayerFound;
+    
     private readonly object addonListLock = new();
+
+    public void ResetIdleState()
+    {
+        idleLastMoveTime = null;
+        idleStuckSeconds = 0;
+        idleLastTriggerUtc = DateTime.MinValue;
+        idleCurrentPosX = idleCurrentPosY = idleCurrentPosZ = 0;
+        idleLastPosX = idleLastPosY = idleLastPosZ = 0;
+        idleDeltaX = idleDeltaY = idleDeltaZ = 0;
+        ResetEuclideanState();
+    }
+
+    public void ResetEuclideanState()
+    {
+        euclideanDiffMoveStart = DateTime.MinValue;
+        euclideanDiffStuckSeconds = 0;
+        euclideanDiffLastTriggerUtc = DateTime.MinValue;
+        euclideanDistance = 0;
+        euclideanLastPosition = Vector3.Zero;
+    }
     private readonly List<string> visibleAddons = [];
     private DateTime lastAddonScanUtc = DateTime.MinValue;
     private string lastKnownCharacterName = string.Empty;
     private string lastKnownHomeWorldName = string.Empty;
     private string lastKnownCurrentWorldName = string.Empty;
-    private string lastKnownCharacterSource = string.Empty;
     private bool hasKnownCharacterWorld;
     private readonly WindowSystem windowSystem = new("TargetBarkNotifier");
     private readonly MainWindow mainWindow;
@@ -62,7 +102,8 @@ public sealed class Plugin : IDalamudPlugin
         IChatGui chatGui,
         IPluginLog log,
         IFramework framework,
-        IClientState clientState)
+        IClientState clientState,
+        IDataManager dataManager)
     {
         PluginInterface = pluginInterface;
         CommandManager = commandManager;
@@ -70,6 +111,7 @@ public sealed class Plugin : IDalamudPlugin
         Log = log;
         Framework = framework;
         ClientState = clientState;
+        DataManager = dataManager;
 
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         Configuration.Initialize(PluginInterface);
@@ -92,7 +134,7 @@ public sealed class Plugin : IDalamudPlugin
         Framework.Update += OnFrameworkUpdate;
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "/tbn 打开主窗口\n/tbn on 启用插件\n/tbn off 禁用插件\n/tbn test 发送测试推送\n/tbn status 查看当前状态"
+            HelpMessage = "/tbn 打开主窗口\n/tbn on 启用插件\n/tbn off 禁用插件\n/tbn test 发送测试推送\n/tbn status 查看当前状态\n/tbn idlenotify on|off 开关静止检测"
         });
         PluginInterface.UiBuilder.Draw += DrawUi;
         PluginInterface.UiBuilder.OpenMainUi += OpenUi;
@@ -120,9 +162,25 @@ public sealed class Plugin : IDalamudPlugin
     {
         UpdateCharacterWorldSnapshot();
 
-        if (!Configuration.Enabled || !Configuration.EnableOfflineMonitor)
+        if (!Configuration.Enabled)
             return;
 
+        if (Configuration.EnableOfflineMonitor)
+            UpdateOfflineMonitor();
+
+        if (Configuration.EnableIdleDetect && Configuration.EnableComponentDiffDetect)
+        {
+            UpdateComponentDiffDetect();
+        }
+
+        if (Configuration.EnableIdleDetect && Configuration.EnableEuclideanDiffDetect)
+        {
+            UpdateEuclideanDiffDetect();
+        }
+    }
+
+    private void UpdateOfflineMonitor()
+    {
         if (offlineAlertPaused)
         {
             if (IsOfflineAddonMissing())
@@ -155,6 +213,150 @@ public sealed class Plugin : IDalamudPlugin
         }
     }
 
+    public int IdleStuckSeconds => idleStuckSeconds;
+    public float IdleCurrentPosX => idleCurrentPosX;
+    public float IdleCurrentPosY => idleCurrentPosY;
+    public float IdleCurrentPosZ => idleCurrentPosZ;
+    public float IdleLastPosX => idleLastPosX;
+    public float IdleLastPosY => idleLastPosY;
+    public float IdleLastPosZ => idleLastPosZ;
+    public float IdleDeltaX => idleDeltaX;
+    public float IdleDeltaY => idleDeltaY;
+    public float IdleDeltaZ => idleDeltaZ;
+    public string IdlePlayerSource => idlePlayerSource;
+    public bool IdlePlayerFound => idlePlayerFound;
+    public float EuclideanDistance => euclideanDistance;
+    public int EuclideanDiffStuckSeconds => euclideanDiffStuckSeconds;
+    public float EuclideanLastPosX => euclideanLastPosition.X;
+    public float EuclideanLastPosY => euclideanLastPosition.Y;
+    public float EuclideanLastPosZ => euclideanLastPosition.Z;
+
+    private unsafe bool EnsureIdlePlayerReady()
+    {
+        var lp = Control.GetLocalPlayer();
+        if (lp == null)
+        {
+            idlePlayerFound = false;
+            idlePlayerSource = "未获取到角色";
+            idleLastMoveTime = null;
+            idleStuckSeconds = 0;
+            return false;
+        }
+
+        idlePlayerFound = true;
+        idlePlayerSource = "CSGameObject";
+        var pos = lp->Position;
+        idleCurrentPosX = pos.X;
+        idleCurrentPosY = pos.Y;
+        idleCurrentPosZ = pos.Z;
+
+        if (idleLastMoveTime == null)
+        {
+            idleLastPosition = pos;
+            idleLastMoveTime = DateTime.UtcNow;
+            idleLastPosX = pos.X;
+            idleLastPosY = pos.Y;
+            idleLastPosZ = pos.Z;
+            idleDeltaX = 0;
+            idleDeltaY = 0;
+            idleDeltaZ = 0;
+            euclideanLastPosition = pos;
+        }
+
+        return true;
+    }
+
+    private void UpdateComponentDiffDetect()
+    {
+        if (!EnsureIdlePlayerReady())
+            return;
+
+        idleDeltaX = Math.Abs(idleCurrentPosX - idleLastPosition.X);
+        idleDeltaY = Math.Abs(idleCurrentPosY - idleLastPosition.Y);
+        idleDeltaZ = Math.Abs(idleCurrentPosZ - idleLastPosition.Z);
+        idleLastPosX = idleLastPosition.X;
+        idleLastPosY = idleLastPosition.Y;
+        idleLastPosZ = idleLastPosition.Z;
+        var threshold = Configuration.ComponentDiffThreshold;
+
+        if (idleDeltaX <= threshold && idleDeltaY <= threshold && idleDeltaZ <= threshold)
+        {
+            var stationaryTime = (DateTime.UtcNow - idleLastMoveTime!.Value).TotalSeconds;
+            idleStuckSeconds = (int)stationaryTime;
+
+            if (stationaryTime >= Configuration.ComponentDiffTimeoutSeconds)
+            {
+                var now = DateTime.UtcNow;
+                var cooldown = Math.Max(Configuration.ComponentDiffTimeoutSeconds, 0);
+                if (cooldown > 0 && (now - idleLastTriggerUtc).TotalSeconds < cooldown)
+                    return;
+
+                idleLastTriggerUtc = now;
+                var titleTemplate = string.IsNullOrWhiteSpace(Configuration.ComponentDiffPushTitle) ? "分量静止检测" : Configuration.ComponentDiffPushTitle;
+                var contentTemplate = string.IsNullOrWhiteSpace(Configuration.ComponentDiffPushContent) ? "角色已静止 {stuck} 秒！" : Configuration.ComponentDiffPushContent;
+                var title = ApplyCharacterPlaceholders(titleTemplate);
+                var content = ApplyCharacterPlaceholders(contentTemplate).Replace("{stuck}", idleStuckSeconds.ToString(), StringComparison.Ordinal);
+                _ = pushService.TriggerPushAsync(title, content, "ComponentDiffDetect", "ComponentDiffDetect");
+                idleLastMoveTime = DateTime.UtcNow;
+            }
+        }
+        else
+        {
+            idleLastPosition = new Vector3(idleCurrentPosX, idleCurrentPosY, idleCurrentPosZ);
+            idleLastMoveTime = DateTime.UtcNow;
+            idleStuckSeconds = 0;
+        }
+    }
+
+    private void UpdateEuclideanDiffDetect()
+    {
+        if (!EnsureIdlePlayerReady())
+            return;
+
+        var currentPos = new Vector3(idleCurrentPosX, idleCurrentPosY, idleCurrentPosZ);
+        var deltaX = Math.Abs(currentPos.X - euclideanLastPosition.X);
+        var deltaY = Math.Abs(currentPos.Y - euclideanLastPosition.Y);
+        var deltaZ = Math.Abs(currentPos.Z - euclideanLastPosition.Z);
+
+        euclideanDistance = (float)Math.Sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
+
+        var threshold = Configuration.EuclideanDiffThreshold;
+
+        if (euclideanDistance <= threshold)
+        {
+            if (euclideanDiffMoveStart == DateTime.MinValue)
+            {
+                euclideanDiffMoveStart = DateTime.UtcNow;
+            }
+            else
+            {
+                euclideanDiffStuckSeconds = (int)(DateTime.UtcNow - euclideanDiffMoveStart).TotalSeconds;
+
+                if (euclideanDiffStuckSeconds >= Configuration.EuclideanDiffTimeoutSeconds)
+                {
+                    var now = DateTime.UtcNow;
+                    var cooldown = Math.Max(Configuration.EuclideanDiffTimeoutSeconds, 0);
+                    if (cooldown > 0 && (now - euclideanDiffLastTriggerUtc).TotalSeconds < cooldown)
+                        return;
+
+                    euclideanDiffLastTriggerUtc = now;
+                    var titleTemplate = string.IsNullOrWhiteSpace(Configuration.EuclideanDiffPushTitle) ? "几何静止检测" : Configuration.EuclideanDiffPushTitle;
+                    var contentTemplate = string.IsNullOrWhiteSpace(Configuration.EuclideanDiffPushContent) ? "角色已静止 {stuck} 秒！" : Configuration.EuclideanDiffPushContent;
+                    var title = ApplyCharacterPlaceholders(titleTemplate);
+                    var content = ApplyCharacterPlaceholders(contentTemplate).Replace("{stuck}", euclideanDiffStuckSeconds.ToString(), StringComparison.Ordinal);
+                    _ = pushService.TriggerPushAsync(title, content, "EuclideanDiffDetect", "EuclideanDiffDetect");
+                    euclideanDiffMoveStart = DateTime.UtcNow;
+                }
+            }
+        }
+        else
+        {
+            euclideanLastPosition = currentPos;
+            euclideanDiffMoveStart = DateTime.MinValue;
+            euclideanDiffStuckSeconds = 0;
+        }
+    }
+
     public string CurrentCharacterWorldDisplay
     {
         get
@@ -165,13 +367,12 @@ public sealed class Plugin : IDalamudPlugin
                 lastKnownCharacterName = latest.Value.Name;
                 lastKnownHomeWorldName = latest.Value.HomeWorld;
                 lastKnownCurrentWorldName = latest.Value.CurrentWorld;
-                lastKnownCharacterSource = latest.Value.Source;
                 hasKnownCharacterWorld = true;
-                return $"{latest.Value.Name}@{latest.Value.HomeWorld} [{latest.Value.Source}]";
+                return $"{latest.Value.Name}@{latest.Value.HomeWorld}，当前位于：{latest.Value.CurrentWorld}";
             }
 
             if (hasKnownCharacterWorld)
-                return $"{lastKnownCharacterName}@{lastKnownHomeWorldName} [{lastKnownCharacterSource}]";
+                return $"{lastKnownCharacterName}@{lastKnownHomeWorldName}，当前位于：{lastKnownCurrentWorldName}";
 
             return "未获取到当前角色名及服务器";
         }
@@ -186,58 +387,55 @@ public sealed class Plugin : IDalamudPlugin
         lastKnownCharacterName = latest.Value.Name;
         lastKnownHomeWorldName = latest.Value.HomeWorld;
         lastKnownCurrentWorldName = latest.Value.CurrentWorld;
-        lastKnownCharacterSource = latest.Value.Source;
         hasKnownCharacterWorld = true;
     }
 
-    private (string Name, string HomeWorld, string CurrentWorld, string Source)? TryBuildCurrentCharacterWorld()
+    private unsafe (string Name, string HomeWorld, string CurrentWorld)? TryBuildCurrentCharacterWorld()
     {
-        foreach (var candidate in EnumeratePlayerCandidates())
-        {
-            var player = candidate.Player;
-            var name = TryReadTextValue(player, "Name");
-            if (string.IsNullOrWhiteSpace(name))
-                continue;
+        var lp = Control.GetLocalPlayer();
+        if (lp == null)
+            return null;
 
-            var homeWorld = TryReadHomeWorldName(player);
-            if (string.IsNullOrWhiteSpace(homeWorld))
-                continue;
+        var nameSpan = lp->Name;
+        var nullIdx = nameSpan.IndexOf((byte)0);
+        if (nullIdx >= 0)
+            nameSpan = nameSpan.Slice(0, nullIdx);
+        var name = Encoding.UTF8.GetString(nameSpan);
+        if (string.IsNullOrWhiteSpace(name))
+            return null;
 
-            var currentWorld = TryReadCurrentWorldName(player);
-            if (string.IsNullOrWhiteSpace(currentWorld))
-                currentWorld = homeWorld;
-
-            return (name, homeWorld, currentWorld, candidate.Source);
-        }
-
-        return null;
+        var character = (Character*)lp;
+        var homeWorld = ResolveWorldName(character->HomeWorld);
+        var currentWorld = ResolveWorldName(character->CurrentWorld);
+        if (string.IsNullOrWhiteSpace(currentWorld))
+            currentWorld = homeWorld;
+        return (name, homeWorld, currentWorld);
     }
 
-    private IEnumerable<(object Player, string Source)> EnumeratePlayerCandidates()
+    private string ResolveWorldName(ushort worldId)
     {
-        object? objectTablePlayer = null;
+        if (worldId == 0)
+            return string.Empty;
+
         try
         {
-            objectTablePlayer = ObjectTable?.LocalPlayer;
+            var sheet = DataManager.GetExcelSheet<World>();
+            if (sheet == null)
+                return worldId.ToString();
+
+            var row = sheet.GetRow(worldId);
+            if (row.RowId == 0)
+                return worldId.ToString();
+
+            var name = row.Name.ToString();
+            if (!string.IsNullOrWhiteSpace(name))
+                return name;
         }
         catch
         {
         }
 
-        if (objectTablePlayer != null)
-            yield return (objectTablePlayer, "ObjectTable");
-
-        object? clientStatePlayer = null;
-        try
-        {
-            clientStatePlayer = TryReadNestedProperty(ClientState, "LocalPlayer");
-        }
-        catch
-        {
-        }
-
-        if (clientStatePlayer != null)
-            yield return (clientStatePlayer, "ClientState");
+        return worldId.ToString();
     }
 
     private string ApplyCharacterPlaceholders(string template)
@@ -260,90 +458,6 @@ public sealed class Plugin : IDalamudPlugin
     {
         var resolved = ApplyTemplate(template ?? string.Empty, message ?? string.Empty, sender ?? string.Empty, channel ?? string.Empty);
         return ApplyCharacterPlaceholders(resolved);
-    }
-
-    private static string? TryReadTextValue(object source, string propertyName)
-    {
-        try
-        {
-            var prop = source.GetType().GetProperty(propertyName);
-            if (prop == null)
-                return null;
-
-            var value = prop.GetValue(source);
-            if (value == null)
-                return null;
-
-            var textValueProp = value.GetType().GetProperty("TextValue");
-            if (textValueProp != null)
-            {
-                var textValue = textValueProp.GetValue(value)?.ToString();
-                if (!string.IsNullOrWhiteSpace(textValue))
-                    return textValue;
-            }
-
-            var text = value.ToString();
-            return string.IsNullOrWhiteSpace(text) ? null : text;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static string? TryReadHomeWorldName(object player)
-    {
-        return TryReadWorldNameFromProperty(player, "HomeWorld");
-    }
-
-    private static string? TryReadCurrentWorldName(object player)
-    {
-        return TryReadWorldNameFromProperty(player, "CurrentWorld");
-    }
-
-    private static string? TryReadWorldNameFromProperty(object source, string propertyName)
-    {
-        try
-        {
-            var prop = source.GetType().GetProperty(propertyName);
-            if (prop == null)
-                return null;
-
-            var worldRef = prop.GetValue(source);
-            if (worldRef == null)
-                return null;
-
-            var worldObj = TryReadNestedProperty(worldRef, "Value") ?? TryReadNestedProperty(worldRef, "ValueNullable");
-            if (worldObj == null)
-                return null;
-
-            var nameObj = TryReadNestedProperty(worldObj, "Name");
-            if (nameObj == null)
-                return null;
-
-            var textValue = TryReadNestedProperty(nameObj, "TextValue")?.ToString();
-            if (!string.IsNullOrWhiteSpace(textValue))
-                return textValue;
-
-            var raw = nameObj.ToString();
-            return string.IsNullOrWhiteSpace(raw) ? null : raw;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static object? TryReadNestedProperty(object source, string propertyName)
-    {
-        try
-        {
-            return source.GetType().GetProperty(propertyName)?.GetValue(source);
-        }
-        catch
-        {
-            return null;
-        }
     }
 
     public void RequestAddonScan()
@@ -657,6 +771,25 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
+        if (action == "idlenotify on")
+        {
+            Configuration.EnableIdleDetect = true;
+            Configuration.EnableComponentDiffDetect = true;
+            Configuration.Save();
+            ResetIdleState();
+            ChatGui.Print("[TBN] 静止检测已启用。");
+            return;
+        }
+
+        if (action == "idlenotify off")
+        {
+            Configuration.EnableIdleDetect = false;
+            Configuration.Save();
+            ResetIdleState();
+            ChatGui.Print("[TBN] 静止检测已禁用。");
+            return;
+        }
+
         switch (action)
         {
             case "on":
@@ -677,7 +810,7 @@ public sealed class Plugin : IDalamudPlugin
                 ChatGui.Print($"[TBN] 状态={(Configuration.Enabled ? "启用" : "禁用")}, 规则数量={Configuration.Rules.Count}");
                 break;
             default:
-                ChatGui.Print("[TBN] 用法: /tbn(打开主窗口) | /tbn on | /tbn off | /tbn test | /tbn status");
+                ChatGui.Print("[TBN] 用法: /tbn(打开主窗口) | /tbn on | /tbn off | /tbn test | /tbn status | /tbn idlenotify on|off");
                 break;
         }
     }
